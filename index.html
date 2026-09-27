@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AR Learning Game - Web & AI Evolution</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<style>
+*{box-sizing:border-box}
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#020617;font-family:"Noto Sans Thai","Segoe UI",sans-serif;color:#fff;touch-action:none}
+#cameraVideo{position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;transform:scaleX(-1);z-index:1;background:#020617}
+#cameraShade{position:fixed;inset:0;z-index:2;pointer-events:none;background:radial-gradient(circle,rgba(15,23,42,.04),rgba(2,6,23,.42))}
+#arCanvas{position:fixed;inset:0;width:100vw;height:100vh;z-index:20;pointer-events:none}
+#gameUI{position:fixed;inset:0;z-index:30;pointer-events:none}
+.glass{background:rgba(15,23,42,.55);border:1px solid rgba(255,255,255,.16);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);box-shadow:0 15px 40px rgba(0,0,0,.25),inset 0 1px 0 rgba(255,255,255,.08)}
+#topBar{position:absolute;top:0;left:0;width:100%;height:13vh;min-height:76px;max-height:110px;padding:10px 18px;display:flex;align-items:center;gap:15px}
+.top-panel{height:100%;border-radius:18px;padding:10px 18px;display:flex;align-items:center}
+#questionPanel{flex:1;min-width:0}#scorePanel{width:min(230px,25vw);justify-content:center;flex-direction:column;flex-shrink:0}
+#questionText{font-size:clamp(13px,1.5vw,19px);line-height:1.35;font-weight:800}
+#levelTitle{font-size:clamp(11px,1vw,14px);color:#93c5fd;margin-bottom:2px}
+#scoreText{font-size:clamp(18px,2vw,28px);font-weight:900;color:#facc15}
+#progressText{font-size:11px;color:#cbd5e1}
+#playArea{position:absolute;top:13vh;bottom:22vh;left:0;right:0;overflow:hidden;pointer-events:none}
+#cardsZone{position:absolute;inset:0;pointer-events:none}
+.game-card{position:absolute;width:clamp(155px,16vw,235px);min-height:145px;padding:14px;border-radius:20px;pointer-events:auto;cursor:grab;user-select:none;touch-action:none;background:linear-gradient(145deg,rgba(255,255,255,.17),rgba(255,255,255,.055));border:1px solid rgba(255,255,255,.25);backdrop-filter:blur(15px);box-shadow:0 20px 35px rgba(0,0,0,.35),0 5px 10px rgba(0,0,0,.15),inset 0 1px 0 rgba(255,255,255,.2);transition:transform .18s,box-shadow .18s}
+.game-card:hover{transform:translateY(-6px) scale(1.02);box-shadow:0 25px 45px rgba(0,0,0,.4),0 0 25px rgba(56,189,248,.18)}
+.game-card.grabbed{cursor:grabbing;transform:scale(1.06);border-color:rgba(74,222,128,.85);box-shadow:0 30px 55px rgba(0,0,0,.45),0 0 30px rgba(74,222,128,.3);z-index:100}
+.card-emoji{text-align:center;font-size:clamp(38px,4vw,58px);line-height:1;margin-bottom:9px;filter:drop-shadow(0 6px 5px rgba(0,0,0,.25))}
+.card-title{text-align:center;font-weight:900;font-size:clamp(14px,1.25vw,18px)}
+.card-description{margin-top:6px;text-align:center;font-size:clamp(10px,.9vw,13px);color:#cbd5e1;line-height:1.35}
+.card-number{position:absolute;top:8px;left:9px;width:25px;height:25px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-size:11px;font-weight:900;background:rgba(14,165,233,.28);border:1px solid rgba(125,211,252,.35)}
+#bottomBar{position:absolute;left:0;right:0;bottom:0;height:22vh;min-height:145px;max-height:220px;padding:10px 18px 14px;display:flex;flex-direction:column;gap:7px}
+#dropInstruction{text-align:center;font-size:clamp(11px,1vw,14px);color:#cbd5e1;text-shadow:0 2px 8px #000}
+#dropZone{flex:1;display:flex;align-items:stretch;justify-content:center;gap:clamp(6px,1vw,12px);pointer-events:auto;min-height:105px}
+.drop-slot{flex:1;max-width:270px;border-radius:18px;border:2px dashed rgba(148,163,184,.48);background:rgba(15,23,42,.45);display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;overflow:hidden;transition:.18s}
+.drop-slot.hover{border-color:#facc15;background:rgba(234,179,8,.18);box-shadow:0 0 25px rgba(250,204,21,.25);transform:translateY(-3px)}
+.drop-slot.correct{border-color:#4ade80;background:rgba(34,197,94,.18);box-shadow:0 0 25px rgba(34,197,94,.22)}
+.slot-number{width:29px;height:29px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:rgba(59,130,246,.25);border:1px solid rgba(147,197,253,.35);font-weight:900;font-size:12px;margin-bottom:5px}
+.slot-label{font-size:clamp(9px,.9vw,12px);color:#94a3b8;text-align:center;padding:0 4px}
+#handStatus{position:absolute;left:50%;transform:translateX(-50%);top:14vh;padding:7px 14px;border-radius:999px;font-size:12px;background:rgba(15,23,42,.65);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(12px);color:#facc15;opacity:0;transition:opacity .2s}
+#handStatus.visible{opacity:1}
+.screen{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:25px;background:radial-gradient(circle at 50% 40%,rgba(30,64,175,.28),rgba(2,6,23,.96) 65%)}
+.screen.hidden{display:none}
+.screen-card{width:min(720px,92vw);padding:clamp(25px,5vw,55px);border-radius:30px;text-align:center}
+.screen-title{font-size:clamp(30px,5vw,62px);font-weight:1000;line-height:1;margin-bottom:14px;background:linear-gradient(90deg,#38bdf8,#818cf8,#c084fc);-webkit-background-clip:text;color:transparent}
+.screen-subtitle{font-size:clamp(15px,1.8vw,21px);color:#cbd5e1;line-height:1.6;margin-bottom:28px}
+.big-button{pointer-events:auto;border:none;padding:14px 34px;border-radius:999px;color:#fff;font-size:17px;font-weight:900;cursor:pointer;background:linear-gradient(135deg,#2563eb,#7c3aed);box-shadow:0 12px 30px rgba(37,99,235,.3);transition:.2s}
+.big-button:hover{transform:translateY(-3px) scale(1.02)}
+.green-button{background:linear-gradient(135deg,#16a34a,#059669)}
+.tutorial-list{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:25px 0;text-align:left}
+.tutorial-item{padding:14px;border-radius:15px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:#dbeafe;font-size:13px;line-height:1.5}
+.tutorial-icon{font-size:27px;margin-bottom:5px}
+#tutorialButton{display:inline-block}
+#resultScore{font-size:clamp(55px,10vw,110px);font-weight:1000;color:#facc15;line-height:1;margin:15px 0;text-shadow:0 0 30px rgba(250,204,21,.25)}
+@media(max-width:700px){#topBar{padding:6px 8px;gap:7px}.top-panel{padding:7px 10px;border-radius:13px}#scorePanel{width:95px}#bottomBar{height:24vh;min-height:150px;padding:7px}#dropZone{gap:4px}.drop-slot{border-radius:11px}.slot-number{width:24px;height:24px;margin-bottom:2px}.slot-label{font-size:8px}.game-card{width:145px;min-height:135px;padding:10px}.tutorial-list{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<video id="cameraVideo" autoplay muted playsinline></video>
+<div id="cameraShade"></div>
+<canvas id="arCanvas"></canvas>
+
+<div id="gameUI">
+  <div id="topBar">
+    <div id="questionPanel" class="glass top-panel">
+      <div>
+        <div id="levelTitle">เกม AR วิทยาการคำนวณ ม.6</div>
+        <div id="questionText">วิวัฒนาการของอินเทอร์เน็ตและปัญญาประดิษฐ์ (AI)</div>
+      </div>
+    </div>
+    <div id="scorePanel" class="glass top-panel">
+      <div id="scoreText">0 / 400</div>
+      <div id="progressText">พร้อมเริ่มเกม</div>
+    </div>
+  </div>
+
+  <div id="playArea"><div id="cardsZone"></div></div>
+
+  <div id="bottomBar">
+    <div id="dropInstruction">👆 จีบการ์ดแล้วลากลงมาเรียงในช่องด้านล่าง</div>
+    <div id="dropZone">
+      <div class="drop-slot" data-slot="0"><div class="slot-number">1</div><div class="slot-label">ช่องที่ 1</div></div>
+      <div class="drop-slot" data-slot="1"><div class="slot-number">2</div><div class="slot-label">ช่องที่ 2</div></div>
+      <div class="drop-slot" data-slot="2"><div class="slot-number">3</div><div class="slot-label">ช่องที่ 3</div></div>
+      <div class="drop-slot" data-slot="3"><div class="slot-number">4</div><div class="slot-label">ช่องที่ 4</div></div>
+    </div>
+  </div>
+  <div id="handStatus">กำลังหามือของคุณ... (หรือใช้เมาส์ลากเล่นแทนได้)</div>
+</div>
+
+<section id="startScreen" class="screen">
+  <div class="screen-card glass">
+    <div style="font-size:65px;margin-bottom:15px">🌐🤖</div>
+    <div class="screen-title">AR Web & AI</div>
+    <div class="screen-subtitle">เกมการเรียนรู้วิชาวิทยาการคำนวณ ม.6<br><strong>วิวัฒนาการของอินเทอร์เน็ตและปัญญาประดิษฐ์</strong></div>
+    <button id="startButton" class="big-button">🚀 เข้าสู่เกม (Start)</button>
+    <div style="margin-top:18px;color:#94a3b8;font-size:11px">ระบบจะขอสิทธิ์ใช้กล้องเพื่อเปิดใช้งาน Hand Tracking</div>
+  </div>
+</section>
+
+<section id="tutorialScreen" class="screen hidden">
+  <div class="screen-card glass">
+    <div style="font-size:58px">🖐️</div>
+    <div class="screen-title" style="font-size:clamp(28px,4vw,48px)">วิธีเล่น</div>
+    <div class="tutorial-list">
+      <div class="tutorial-item"><div class="tutorial-icon">☝️</div><strong>1. เล็ง</strong><br>ขยับนิ้วชี้เพื่อเลื่อนเคอร์เซอร์สีฟ้า</div>
+      <div class="tutorial-item"><div class="tutorial-icon">🤏</div><strong>2. จีบ</strong><br>ใช้นิ้วโป้งและนิ้วชี้แตะกันเพื่อหยิบการ์ด</div>
+      <div class="tutorial-item"><div class="tutorial-icon">🟢</div><strong>3. ลาก</strong><br>จีบค้างไว้แล้วลากการ์ดลงด้านล่าง</div>
+      <div class="tutorial-item"><div class="tutorial-icon">✋</div><strong>4. ปล่อย</strong><br>กางนิ้วออกเมื่ออยู่เหนือ Drop Zone</div>
+    </div>
+    <div style="color:#94a3b8;font-size:12px;margin-bottom:18px">สามารถใช้ Mouse / Touch ลากการ์ดแทนได้</div>
+    <button id="tutorialButton" class="big-button green-button">🎮 เริ่มเกม!</button>
+  </div>
+</section>
+
+<section id="resultScreen" class="screen hidden">
+  <div class="screen-card glass">
+    <div style="font-size:80px">🏆</div>
+    <div class="screen-title">All Clear!</div>
+    <div style="font-size:18px;color:#cbd5e1">คุณผ่านทั้ง 4 ด่านเรียบร้อยแล้ว</div>
+    <div id="resultScore">400</div>
+    <div style="font-size:20px;color:#facc15;font-weight:900">คะแนนเต็ม 400 คะแนน</div>
+    <div id="messageBox" style="margin:20px 0;color:#cbd5e1">เยี่ยมมาก!</div>
+    <button id="restartButton" class="big-button">🔄 เล่นอีกครั้ง</button>
+  </div>
+</section>
+
+<script>
+"use strict";
+
+const video=document.getElementById("cameraVideo");
+const canvas=document.getElementById("arCanvas");
+const ctx=canvas.getContext("2d");
+const startScreen=document.getElementById("startScreen");
+const tutorialScreen=document.getElementById("tutorialScreen");
+const resultScreen=document.getElementById("resultScreen");
+const startButton=document.getElementById("startButton");
+const tutorialButton=document.getElementById("tutorialButton");
+const restartButton=document.getElementById("restartButton");
+const cardsZone=document.getElementById("cardsZone");
+const dropSlots=[...document.querySelectorAll(".drop-slot")];
+const levelTitle=document.getElementById("levelTitle");
+const questionText=document.getElementById("questionText");
+const scoreText=document.getElementById("scoreText");
+const progressText=document.getElementById("progressText");
+const handStatus=document.getElementById("handStatus");
+
+const levels=[
+ {title:"ด่าน 1 — วิวัฒนาการของอินเทอร์เน็ต",question:"เรียงลำดับวิวัฒนาการของ Web จากอดีตสู่ปัจจุบัน",cards:[
+  {id:"web1",emoji:"📄",title:"Web 1.0",description:"Read-Only • เว็บไซต์เนื้อหาคงที่",correctIndex:0},
+  {id:"web2",emoji:"💬",title:"Web 2.0",description:"Read-Write • Social Media",correctIndex:1},
+  {id:"web3",emoji:"🧠",title:"Web 3.0",description:"Semantic Web & AI",correctIndex:2},
+  {id:"web4",emoji:"🤖",title:"Web 4.0",description:"Ubiquitous & Autonomous",correctIndex:3}
+ ]},
+ {title:"ด่าน 2 — เปรียบเทียบ Web 1.0 – Web 4.0",question:"จับคู่จุดเด่นและเทคโนโลยีสำคัญกับยุคของ Web",cards:[
+  {id:"compare1",emoji:"🧾",title:"Static HTML",description:"สื่อสารทางเดียว • Web 1.0",correctIndex:0},
+  {id:"compare2",emoji:"📱",title:"User Generated Content",description:"บล็อกและโซเชียล • Web 2.0",correctIndex:1},
+  {id:"compare3",emoji:"⛓️",title:"Blockchain",description:"Smart Contract & Machine Reading • Web 3.0",correctIndex:2},
+  {id:"compare4",emoji:"🧠",title:"Ultra-Smart",description:"AI ทำงานแทนมนุษย์ • ไร้สายทุกอุปกรณ์ • Web 4.0",correctIndex:3}
+ ]},
+ {title:"ด่าน 3 — ปัญญาประดิษฐ์ (Artificial Intelligence)",question:"เรียงลำดับขั้นตอนอัลกอริทึมการทำงานของระบบ AI",cards:[
+  {id:"ai1",emoji:"📊",title:"Data Collection",description:"รวบรวมข้อมูล",correctIndex:0},
+  {id:"ai2",emoji:"🏋️",title:"Model Training",description:"เทรนโมเดลด้วยข้อมูล",correctIndex:1},
+  {id:"ai3",emoji:"🔍",title:"Evaluation",description:"ประเมินความแม่นยำ",correctIndex:2},
+  {id:"ai4",emoji:"🚀",title:"Deployment",description:"ประยุกต์ใช้งานและพยากรณ์",correctIndex:3}
+ ]},
+ {title:"ด่าน 4 — AI ในชีวิตประจำวัน",question:"เรียงลำดับกระบวนการทำงานของ AI ระบบจดจำใบหน้า",cards:[
+  {id:"face1",emoji:"👤",title:"Face Detection",description:"ตรวจจับตำแหน่งใบหน้า",correctIndex:0},
+  {id:"face2",emoji:"🧬",title:"Feature Extraction",description:"สกัดคุณลักษณะเด่น",correctIndex:1},
+  {id:"face3",emoji:"🔐",title:"Matching Process",description:"เปรียบเทียบกับฐานข้อมูล",correctIndex:2},
+  {id:"face4",emoji:"✅",title:"Access Granted",description:"ยืนยันตัวตนและปลดล็อก",correctIndex:3}
+ ]}
+];
+
+let currentLevel=0,totalScore=0,activeCards=[],placedCards=[null,null,null,null];
+let draggingCard=null,draggingMode=null,dragOffsetX=0,dragOffsetY=0;
+let gameStarted=false,tutorialActive=false,gameFinished=false;
+let latestLandmarks=null,handDetected=false,lastHandSeenTime=0;
+let cursorX=innerWidth/2,cursorY=innerHeight/2;
+let pinchActive=false,previousPinch=false;
+let cursorState="normal",missTimer=0;
+let hands=null,cameraStream=null;
+const PINCH_THRESHOLD=.065;
+
+function resizeCanvas(){
+ const dpr=Math.min(devicePixelRatio||1,2);
+ canvas.width=innerWidth*dpr;canvas.height=innerHeight*dpr;
+ canvas.style.width=innerWidth+"px";canvas.style.height=innerHeight+"px";
+ ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+addEventListener("resize",resizeCanvas);resizeCanvas();
+
+function setupHands(){
+ if(typeof Hands==="undefined"){showHandWarning();return;}
+ hands=new Hands({locateFile:file=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+ hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:.55,minTrackingConfidence:.55});
+ hands.onResults(onHandResults);
+}
+
+function onHandResults(results){
+ if(results.multiHandLandmarks?.length){
+  latestLandmarks=results.multiHandLandmarks[0];handDetected=true;lastHandSeenTime=performance.now();
+  const tip=latestLandmarks[8],thumb=latestLandmarks[4];
+  cursorX=(1-tip.x)*innerWidth;cursorY=tip.y*innerHeight;
+  const dx=thumb.x-tip.x,dy=thumb.y-tip.y;
+  const distance=Math.sqrt(dx*dx+dy*dy);
+  pinchActive=distance<PINCH_THRESHOLD;
+  handleHandInteraction();
+ }else{latestLandmarks=null;handDetected=false;pinchActive=false;}
+}
+
+function handleHandInteraction(){
+ if(!gameStarted||gameFinished)return;
+ if(tutorialActive){
+  if(pinchActive&&!previousPinch&&isPointInsideElement(cursorX,cursorY,tutorialButton))startActualGame();
+  previousPinch=pinchActive;return;
+ }
+ if(draggingCard&&draggingMode==="hand"){
+  moveCardToCursor(draggingCard);updateSlotHover(cursorX,cursorY);
+  if(!pinchActive&&previousPinch)releaseHandCard();
+  previousPinch=pinchActive;return;
+ }
+ if(pinchActive&&!previousPinch){
+  const card=getCardAtPoint(cursorX,cursorY);
+  if(card)startHandDrag(card);else{cursorState="miss";missTimer=performance.now();}
+ }
+ previousPinch=pinchActive;
+}
+
+function drawLoop(){
+ ctx.clearRect(0,0,innerWidth,innerHeight);
+ if(latestLandmarks)drawHandSkeleton(latestLandmarks);
+ drawCursor();
+ if(gameStarted&&!gameFinished&&performance.now()-lastHandSeenTime>1800)handStatus.classList.add("visible");
+ else handStatus.classList.remove("visible");
+ requestAnimationFrame(drawLoop);
+}
+
+function drawHandSkeleton(lm){
+ ctx.save();
+ const connections=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+ ctx.lineWidth=3;ctx.strokeStyle="rgba(56,189,248,.85)";
+ for(const[a,b]of connections){
+  const p1=lm[a],p2=lm[b],x1=(1-p1.x)*innerWidth,y1=p1.y*innerHeight,x2=(1-p2.x)*innerWidth,y2=p2.y*innerHeight;
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();
+ }
+ for(let i=0;i<lm.length;i++){
+  const p=lm[i],x=(1-p.x)*innerWidth,y=p.y*innerHeight;
+  ctx.beginPath();ctx.arc(x,y,i===8||i===4?7:4,0,Math.PI*2);
+  ctx.fillStyle=i===8?"#facc15":i===4?"#fb7185":"#38bdf8";ctx.fill();
+ }
+ ctx.restore();
+}
+
+function drawCursor(){
+ if(!gameStarted&&!tutorialActive)return;
+ const x=cursorX,y=cursorY;ctx.save();
+ if(cursorState==="normal"){
+  ctx.beginPath();ctx.arc(x,y,12,0,Math.PI*2);ctx.fillStyle="rgba(56,189,248,.28)";ctx.fill();ctx.lineWidth=3;ctx.strokeStyle="#38bdf8";ctx.stroke();
+ }else if(cursorState==="hover"){
+  ctx.beginPath();ctx.arc(x,y,19,0,Math.PI*2);ctx.setLineDash([5,5]);ctx.lineWidth=3;ctx.strokeStyle="#facc15";ctx.stroke();ctx.setLineDash([]);
+ }else if(cursorState==="grabbed"){
+  ctx.beginPath();ctx.arc(x,y,22,0,Math.PI*2);ctx.fillStyle="rgba(34,197,94,.25)";ctx.fill();ctx.lineWidth=4;ctx.strokeStyle="#4ade80";ctx.stroke();
+  ctx.fillStyle="#4ade80";ctx.font="bold 20px sans-serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText("✓",x,y);
+ }else{
+  ctx.beginPath();ctx.arc(x,y,19,0,Math.PI*2);ctx.fillStyle="rgba(239,68,68,.18)";ctx.fill();ctx.lineWidth=4;ctx.strokeStyle="#ef4444";ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x-7,y-7);ctx.lineTo(x+7,y+7);ctx.moveTo(x+7,y-7);ctx.lineTo(x-7,y+7);ctx.stroke();
+  if(performance.now()-missTimer>500)cursorState="normal";
+ }
+ ctx.restore();
+}
+
+async function startCamera(){
+ try{
+  cameraStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:"user",width:{ideal:1280},height:{ideal:720}},audio:false});
+  video.srcObject=cameraStream;await video.play();return true;
+ }catch(e){console.warn(e);showHandWarning();return false;}
+}
+
+async function processVideo(){
+ if(hands&&video.srcObject&&video.readyState>=2){try{await hands.send({image:video});}catch(e){console.warn(e);}}
+ requestAnimationFrame(processVideo);
+}
+
+startButton.addEventListener("click",async()=>{
+ startButton.disabled=true;startButton.textContent="กำลังเปิดกล้อง...";
+ setupHands();await startCamera();
+ startScreen.classList.add("hidden");tutorialScreen.classList.remove("hidden");tutorialActive=true;
+ requestAnimationFrame(processVideo);
+});
+
+tutorialButton.addEventListener("click",startActualGame);
+
+function startActualGame(){
+ tutorialActive=false;gameStarted=true;tutorialScreen.classList.add("hidden");
+ currentLevel=0;totalScore=0;loadLevel(0);
+}
+
+function loadLevel(index){
+ if(index>=levels.length){finishGame();return;}
+ currentLevel=index;placedCards=[null,null,null,null];
+ activeCards=shuffle(levels[index].cards.map(c=>({...c})));
+ levelTitle.textContent=levels[index].title;questionText.textContent=levels[index].question;
+ scoreText.textContent=`${totalScore} / 400`;progressText.textContent=`ด่าน ${index+1} / 4`;
+ clearCards();resetDropSlots();createCards(activeCards);
+}
+
+function createCards(cards){
+ const positions=[{x:8,y:10},{x:56,y:12},{x:23,y:52},{x:70,y:55}];
+ cards.forEach((card,index)=>{
+  const el=document.createElement("div");el.className="game-card";el.dataset.cardId=card.id;
+  el.innerHTML=`<div class="card-number">${index+1}</div><div class="card-emoji">${card.emoji}</div><div class="card-title">${card.title}</div><div class="card-description">${card.description}</div>`;
+  el.style.left=positions[index].x+"%";el.style.top=positions[index].y+"%";
+  el.addEventListener("pointerdown",e=>{e.preventDefault();startPointerDrag(el,e)});
+  cardsZone.appendChild(el);
+ });
+}
+
+function startPointerDrag(card,event){
+ if(!gameStarted||tutorialActive||gameFinished)return;
+ draggingCard=card;draggingMode="mouse";card.classList.add("grabbed");cursorState="grabbed";
+ const r=card.getBoundingClientRect();dragOffsetX=event.clientX-r.left;dragOffsetY=event.clientY-r.top;
+ const move=e=>{if(!draggingCard||draggingMode!=="mouse")return;cursorX=e.clientX;cursorY=e.clientY;moveCardByPointer(draggingCard,e.clientX,e.clientY);updateSlotHover(e.clientX,e.clientY)};
+ const up=e=>{document.removeEventListener("pointermove",move);document.removeEventListener("pointerup",up);if(draggingCard)releasePointerCard(e.clientX,e.clientY)};
+ document.addEventListener("pointermove",move);document.addEventListener("pointerup",up);
+}
+
+function startHandDrag(card){draggingCard=card;draggingMode="hand";card.classList.add("grabbed");cursorState="grabbed";const r=card.getBoundingClientRect();dragOffsetX=cursorX-r.left-r.width/2;dragOffsetY=cursorY-r.top-r.height/2}
+function moveCardToCursor(card){
+ const r=card.getBoundingClientRect(),z=cardsZone.getBoundingClientRect();
+ let left=cursorX-r.width/2-z.left,top=cursorY-r.height/2-z.top;
+ card.style.left=Math.max(0,Math.min(z.width-r.width,left))+"px";card.style.top=Math.max(0,Math.min(z.height-r.height,top))+"px";
+}
+function moveCardByPointer(card,x,y){
+ const z=cardsZone.getBoundingClientRect(),r=card.getBoundingClientRect();
+ card.style.left=Math.max(0,Math.min(z.width-r.width,x-dragOffsetX-z.left))+"px";
+ card.style.top=Math.max(0,Math.min(z.height-r.height,y-dragOffsetY-z.top))+"px";
+}
+function releaseHandCard(){if(draggingCard)finishDrop(draggingCard,getSlotAtPoint(cursorX,cursorY))}
+function releasePointerCard(x,y){if(draggingCard)finishDrop(draggingCard,getSlotAtPoint(x,y))}
+
+function finishDrop(card,slotIndex){
+ clearSlotHover();card.classList.remove("grabbed");
+ if(slotIndex===null){cursorState="normal";returnToOriginal(card);draggingCard=null;draggingMode=null;return}
+ const data=activeCards.find(c=>c.id===card.dataset.cardId);
+ if(data.correctIndex===slotIndex&&!placedCards[slotIndex]){
+  placedCards[slotIndex]=data;putCardIntoSlot(card,slotIndex);totalScore+=100;scoreText.textContent=`${totalScore} / 400`;cursorState="grabbed";
+  if(placedCards.every(Boolean))setTimeout(nextLevel,850);
+ }else{
+  cursorState="miss";missTimer=performance.now();returnToOriginal(card);flashMessage("ยังไม่ถูกตำแหน่ง ลองคิดลำดับอีกครั้งนะ ✨");
+ }
+ draggingCard=null;draggingMode=null;
+}
+
+function putCardIntoSlot(card,i){
+ const slot=dropSlots[i],r=slot.getBoundingClientRect();
+ card.style.position="fixed";card.style.left=(r.left+4)+"px";card.style.top=(r.top+4)+"px";card.style.width=Math.max(100,r.width-8)+"px";card.style.height=Math.max(70,r.height-8)+"px";card.style.minHeight="0";card.style.zIndex="10";card.style.pointerEvents="none";card.classList.add("correct");slot.classList.add("correct");
+}
+const originalPositions=new Map();
+function rememberOriginal(card){if(!originalPositions.has(card.dataset.cardId))originalPositions.set(card.dataset.cardId,{left:card.style.left,top:card.style.top})}
+function returnToOriginal(card){rememberOriginal(card);const p=originalPositions.get(card.dataset.cardId);card.style.position="absolute";card.style.width="";card.style.height="";card.style.minHeight="";card.style.left=p.left;card.style.top=p.top;card.style.zIndex="";card.classList.remove("correct")}
+
+function updateSlotHover(x,y){
+ const i=getSlotAtPoint(x,y);clearSlotHover();
+ if(i!==null&&!placedCards[i]){dropSlots[i].classList.add("hover");cursorState="hover"}else if(draggingCard)cursorState="grabbed";
+}
+function clearSlotHover(){dropSlots.forEach(s=>s.classList.remove("hover"))}
+function getSlotAtPoint(x,y){
+ for(let i=0;i<dropSlots.length;i++){const r=dropSlots[i].getBoundingClientRect();if(x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom)return i}return null;
+}
+function getCardAtPoint(x,y){
+ return [...document.querySelectorAll(".game-card")].reverse().find(card=>{
+  if(card.style.pointerEvents==="none")return false;const r=card.getBoundingClientRect();return x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom;
+ })||null;
+}
+function isPointInsideElement(x,y,e){const r=e.getBoundingClientRect();return x>=r.left&&x<=r.right&&y>=r.top&&y<=r.bottom}
+
+function nextLevel(){if(currentLevel>=3){finishGame();return}flashMessage(`ผ่านด่าน ${currentLevel+1} แล้ว! +100 คะแนน 🎉`);setTimeout(()=>loadLevel(currentLevel+1),800)}
+function finishGame(){
+ gameFinished=true;gameStarted=false;resultScreen.classList.remove("hidden");document.getElementById("resultScore").textContent=totalScore;
+ document.getElementById("messageBox").textContent="เยี่ยมมาก! คุณเข้าใจวิวัฒนาการของ Web และกระบวนการทำงานของ AI ครบทั้ง 4 ด่านแล้ว 🎉";
+}
+restartButton.addEventListener("click",()=>{resultScreen.classList.add("hidden");gameFinished=false;gameStarted=true;currentLevel=0;totalScore=0;originalPositions.clear();loadLevel(0)})
+function clearCards(){cardsZone.innerHTML="";originalPositions.clear();draggingCard=null;draggingMode=null}
+function resetDropSlots(){dropSlots.forEach((s,i)=>{s.classList.remove("correct","hover");s.innerHTML=`<div class="slot-number">${i+1}</div><div class="slot-label">ช่องที่ ${i+1}</div>`})}
+addEventListener("pointermove",e=>{if(e.pointerType==="mouse"&&!handDetected&&!draggingCard){cursorX=e.clientX;cursorY=e.clientY;cursorState=getCardAtPoint(cursorX,cursorY)?"hover":"normal"}})
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+function flashMessage(message){
+ const old=document.getElementById("floatingMessage");if(old)old.remove();
+ const d=document.createElement("div");d.id="floatingMessage";d.textContent=message;
+ Object.assign(d.style,{position:"fixed",left:"50%",top:"20%",transform:"translateX(-50%)",zIndex:200,padding:"12px 22px",borderRadius:"999px",background:"rgba(15,23,42,.85)",border:"1px solid rgba(255,255,255,.18)",backdropFilter:"blur(15px)",fontWeight:"900",fontSize:"14px",boxShadow:"0 15px 35px rgba(0,0,0,.3)"});
+ document.body.appendChild(d);setTimeout(()=>{d.style.opacity="0";d.style.transition="opacity .25s";setTimeout(()=>d.remove(),300)},1200);
+}
+function showHandWarning(){handStatus.classList.add("visible")}
+addEventListener("beforeunload",()=>cameraStream?.getTracks().forEach(t=>t.stop()));
+requestAnimationFrame(drawLoop);
+</script>
+</body>
+</html>
